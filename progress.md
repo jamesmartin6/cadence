@@ -55,6 +55,14 @@ spec detail, then continue with the first unchecked task below.
 
 (Deviations from the build plan, with rationale, go here as they happen.)
 
+- Attempted to set up an hourly scheduled cloud-agent routine (via claude.ai routines)
+  as a safety net in case the local session hit usage limits mid-build. Blocked: routines
+  that attach a GitHub repo require the GitHub account to be connected at
+  claude.ai/customize/connectors first, which needs interactive OAuth the user isn't
+  present to do. Not pursued further (don't ask the user for anything). Mitigation:
+  this file is kept meticulously current and every task is committed+pushed individually,
+  so any future session (local resume, or the user manually setting up a routine later)
+  can pick up cleanly from here with zero lost work.
 - Using `postgresql_embedded` crate as a relay-server dev-dependency to make
   `cargo test` self-contained without Docker (see Environment notes). Does not change
   the production dependency — that's still `sqlx` against a real Postgres, exactly as
