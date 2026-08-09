@@ -1,0 +1,33 @@
+# Rust
+/target/
+**/target/
+Cargo.lock.bak
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.local
+
+# WASM generated output (rebuilt by wasm-pack, checked in separately if needed)
+frontend/src/wasm/*
+!frontend/src/wasm/.gitkeep
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Postgres local data (if run outside docker)
+pgdata/
+.pgtmp/
