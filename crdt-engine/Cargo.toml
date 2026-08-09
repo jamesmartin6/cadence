@@ -1,0 +1,14 @@
+[package]
+name = "crdt-engine"
+version = "0.1.0"
+edition = "2021"
+description = "From-scratch RGA sequence CRDT for collaborative text editing"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+proptest = "1"

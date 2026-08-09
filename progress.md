@@ -70,7 +70,7 @@ spec detail, then continue with the first unchecked task below.
 
 ## Current status
 
-**Phase: 0 (scaffold) — in progress.**
+**Phase 1 complete and thoroughly tested. Starting Phase 2 (WASM bindings) next.**
 
 ## Task Checklist
 
@@ -80,15 +80,15 @@ spec detail, then continue with the first unchecked task below.
 - [ ] progress.md (this file) in place
 - [ ] Autonomous continuation mechanism set up (scheduled cloud routine, hourly)
 
-### Phase 1 — CRDT engine core (pure Rust, no WASM)
-- [ ] `crdt-engine` crate scaffolded (Cargo.toml, lib layout)
-- [ ] `id.rs`: OpId (site_id, counter), total ordering
-- [ ] `op.rs`: Operation::Insert / Operation::Delete
-- [ ] `rga.rs`: Rga core structure, insert_local, apply_remote (RGA insert rule)
-- [ ] `doc.rs`: Doc wrapper, to_string, insert_local(index), delete_local(index)
-- [ ] Unit tests: sequential inserts, delete removes correct char, order-independence
-- [ ] Proptest convergence tests across 2-4 simulated sites, random orderings
-- [ ] All tests green across many seeds (run proptest with a high case count)
+### Phase 1 — CRDT engine core (pure Rust, no WASM) — DONE
+- [x] `crdt-engine` crate scaffolded (Cargo.toml, lib layout)
+- [x] `id.rs`: OpId (site_id, counter), total ordering
+- [x] `op.rs`: Operation::Insert / Operation::Delete
+- [x] `rga.rs`: Rga core structure, insert_local, apply_remote (RGA insert rule)
+- [x] `doc.rs`: Doc wrapper, to_string, insert_local(index), delete_local(index)
+- [x] Unit tests: sequential inserts, delete removes correct char, order-independence
+- [x] Proptest convergence tests across 2-4 simulated sites, random orderings
+- [x] All tests green across many seeds (verified with `PROPTEST_CASES=5000 cargo test --release`, 0.39s)
 
 ### Phase 2 — WASM bindings
 - [ ] `#[wasm_bindgen]` CrdtDoc wrapper in lib.rs (new/insert/delete/apply_remote/to_string)
@@ -137,4 +137,22 @@ spec detail, then continue with the first unchecked task below.
 
 ## Notes / gotchas discovered during build
 
-(Append here as encountered — e.g. platform quirks, crate version issues.)
+- **Real bug found and fixed during Phase 1**: `OpId.counter` must be a Lamport clock
+  (advanced on observing remote ops too), not a plain per-site local counter. Without
+  this, a site's very first local edit could get a *lower* counter than a remote op it
+  had already causally observed, which corrupts the RGA sibling tie-break (it uses id
+  comparison to decide ordering among nodes inserted after the same anchor, relying on
+  "already observed" implying "smaller id"). Symptom caught by a hand-written test, not
+  the property test (the property test only asserts replicas agree with *each other*,
+  and they did — just not with the intuitively-correct position — so it silently passed
+  even with the bug present for a while during development). Fixed in `Doc::apply_remote`
+  by bumping `next_counter` to `max(next_counter, observed.counter + 1)` on every
+  observed remote id. Lesson for later phases: hand-written scenario tests catching
+  "obviously correct" expected output are just as important as the convergence property
+  test, since convergence alone doesn't guarantee the *intuitive* result — only that
+  everyone agrees on *some* result.
+- `crdt-engine/Cargo.lock` is committed (not just `.gitignore`d) even though this is a
+  library crate, because it's really an application component (built as a `cdylib` via
+  wasm-pack, never published to crates.io), so pinning exact dependency versions for
+  reproducibility is more valuable than the usual "libraries shouldn't commit Cargo.lock"
+  advice.
