@@ -173,14 +173,33 @@ spec detail, then continue with the first unchecked task below.
       lists previously created documents"
 
 ### Phase 6 — Dockerization & polish
-- [ ] `docker-compose.yml` (postgres + relay-server; frontend build documented)
-- [ ] Dockerfile(s) for relay-server (and frontend static serving)
-- [ ] README: architecture explanation, setup, offline-merge demo walkthrough,
-      Known Gaps section, resume story notes
-- [ ] Final pass: verify `docker compose up` where Docker is available; otherwise
-      document clearly that it needs verification on a Docker-capable machine
+- [x] `docker-compose.yml` — postgres + relay-server + frontend (nginx-served static
+      build), all three, one command (`npm run dev` also still documented for hot-reload
+      local dev)
+- [x] Dockerfile for relay-server (multi-stage, dependency-layer caching)
+- [x] Dockerfile for frontend (multi-stage node build -> nginx; SPA fallback via
+      `nginx.conf` since the app does client-side routing)
+- [x] README: architecture explanation + diagram, setup, offline-merge demo walkthrough,
+      Known Gaps section, Raft-comparison talking point, dev/test instructions
+- [x] MIT LICENSE added
+- [x] GitHub Actions CI (`.github/workflows/ci.yml`): crdt-engine tests, relay-server
+      tests, frontend typecheck/lint/build/e2e, AND a `docker compose build && up` smoke
+      test — see Notes below for why this exists
+- [ ] Final pass: confirm the CI docker job actually passes once pushed (this machine has
+      no Docker at all, so the compose setup has only been reviewed by hand + validated
+      as syntactically correct YAML, never actually built/run, until CI runs it for real)
 
 ## Notes / gotchas discovered during build
+
+- **Phase 6**: this dev machine has no Docker at all (see Environment notes at the top),
+  so `docker-compose.yml` and both Dockerfiles were written carefully by hand and
+  validated only as syntactically-correct YAML — never actually built or run locally.
+  To get real verification anyway, added a `docker` job to the GitHub Actions CI
+  workflow that runs on GitHub's hosted runners (which DO have Docker): `docker compose
+  build`, `up -d`, waits for both services to respond, does a smoke-test doc creation
+  through the real relay server, then tears down. If you're resuming this project and
+  the CI docker job is red, start there — that's the one part of the stack that was
+  never actually executed before being pushed.
 
 - **Real bug found and fixed during Phase 1**: `OpId.counter` must be a Lamport clock
   (advanced on observing remote ops too), not a plain per-site local counter. Without

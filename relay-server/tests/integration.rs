@@ -138,8 +138,7 @@ async fn two_clients_converge_and_late_joiner_reconstructs_history() {
         json!({"type": "Insert", "id": {"site_id": 1, "counter": 0}, "after": null, "char": "h"});
     client_a
         .send(Message::Text(
-            json!({"kind": "op", "payload": op_payload, "site_id": 1})
-                .to_string(),
+            json!({"kind": "op", "payload": op_payload, "site_id": 1}).to_string(),
         ))
         .await
         .unwrap();
@@ -164,8 +163,7 @@ async fn two_clients_converge_and_late_joiner_reconstructs_history() {
         json!({"type": "Insert", "id": {"site_id": 2, "counter": 0}, "after": null, "char": "i"});
     client_b
         .send(Message::Text(
-            json!({"kind": "op", "payload": op_payload_b, "site_id": 2})
-                .to_string(),
+            json!({"kind": "op", "payload": op_payload_b, "site_id": 2}).to_string(),
         ))
         .await
         .unwrap();
@@ -199,8 +197,7 @@ async fn server_restart_does_not_lose_data() {
         json!({"type": "Insert", "id": {"site_id": 1, "counter": 0}, "after": null, "char": "z"});
     client
         .send(Message::Text(
-            json!({"kind": "op", "payload": op_payload, "site_id": 1})
-                .to_string(),
+            json!({"kind": "op", "payload": op_payload, "site_id": 1}).to_string(),
         ))
         .await
         .unwrap();

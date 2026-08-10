@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cadence
+    volumes:
+      - cadence-pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  relay-server:
+    build: ./relay-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/cadence
+      PORT: 3001
+      RUST_LOG: info
+    ports:
+      - "3001:3001"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Browser-reachable URL for the relay server -- the browser runs on the host,
+        # not inside the compose network, so this must be the published port on
+        # localhost, not the internal service hostname.
+        VITE_RELAY_HTTP_URL: http://localhost:3001
+    restart: unless-stopped
+    depends_on:
+      - relay-server
+    ports:
+      - "8080:80"
+
+volumes:
+  cadence-pgdata:

@@ -1,0 +1,193 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  crdt-engine:
+    name: crdt-engine (unit + property tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crdt-engine
+      - name: fmt check
+        working-directory: crdt-engine
+        run: cargo fmt --check
+      - name: clippy
+        working-directory: crdt-engine
+        run: cargo clippy --all-targets -- -D warnings
+      - name: test (incl. proptest convergence)
+        working-directory: crdt-engine
+        run: cargo test --release
+        env:
+          PROPTEST_CASES: "2048"
+
+  relay-server:
+    name: relay-server (integration tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: relay-server
+      - name: fmt check
+        working-directory: relay-server
+        run: cargo fmt --check
+      - name: clippy
+        working-directory: relay-server
+        run: cargo clippy --all-targets -- -D warnings
+      - name: test (spins up its own embedded Postgres, no service container needed)
+        working-directory: relay-server
+        run: cargo test
+
+  frontend:
+    name: frontend (typecheck, lint, build, e2e)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cadence
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: typecheck
+        working-directory: frontend
+        run: npx tsc -b
+
+      - name: lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: build
+        working-directory: frontend
+        run: npm run build
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: relay-server
+
+      - name: build relay-server
+        working-directory: relay-server
+        run: cargo build --release
+
+      - name: start relay-server
+        working-directory: relay-server
+        run: ./target/release/relay-server &
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/cadence
+          PORT: "3001"
+
+      - name: wait for relay-server
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/docs > /dev/null; then
+              echo "relay-server is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "relay-server never came up" >&2
+          exit 1
+
+      - name: install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: e2e tests
+        working-directory: frontend
+        run: npm run test:e2e
+        env:
+          VITE_RELAY_HTTP_URL: http://localhost:3001
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+  docker:
+    name: docker compose build + smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build all images
+        run: docker compose build
+
+      - name: start the stack
+        run: docker compose up -d
+
+      - name: wait for relay-server
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/docs > /dev/null; then
+              echo "relay-server is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs
+          exit 1
+
+      - name: wait for frontend
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/ > /dev/null; then
+              echo "frontend is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs
+          exit 1
+
+      - name: smoke test -- create a doc through the real stack
+        run: |
+          set -e
+          doc_id=$(curl -sf -X POST http://localhost:3001/docs -H "Content-Type: application/json" -d '{}' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "created doc: $doc_id"
+          curl -sf http://localhost:3001/docs | grep -q "$doc_id"
+
+      - name: docker compose logs (always, for debugging)
+        if: always()
+        run: docker compose logs
+
+      - name: tear down
+        if: always()
+        run: docker compose down -v
