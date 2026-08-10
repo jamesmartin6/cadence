@@ -36,7 +36,17 @@ impl Rga {
     /// higher than `id`, and also skip over any nodes inserted even deeper (after one of
     /// those siblings) since they belong further right regardless of their id. This
     /// produces the same final ordering no matter what order concurrent inserts arrive in.
+    ///
+    /// Idempotent: integrating an id that's already present is a no-op. This matters in
+    /// practice, not just in theory -- the relay server replays a document's *entire* op
+    /// log to every new connection, including a reconnect of a client that already has
+    /// some (or most) of that history, so re-delivery of already-known ops is a normal,
+    /// expected occurrence rather than an edge case.
     pub fn integrate_insert(&mut self, id: OpId, after: Option<OpId>, ch: char) {
+        if self.index_of(id).is_some() {
+            return;
+        }
+
         let left: isize = match after {
             None => -1,
             Some(a) => self

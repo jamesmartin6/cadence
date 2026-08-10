@@ -55,6 +55,13 @@ spec detail, then continue with the first unchecked task below.
 
 (Deviations from the build plan, with rationale, go here as they happen.)
 
+- No routing library (react-router etc.) — the app only has two screens (doc list,
+  editor), so `App.tsx` does its own tiny pathname-based routing with
+  `history.pushState`/`popstate`. Would revisit if the app grew more screens.
+- Built Phase 5's `GET /docs` endpoint and `DocList.tsx` picker alongside Phases 3-4
+  instead of as a separate pass, since they were small and natural to build with the
+  code they sit next to. Phase 5's remaining checklist items are frontend-level
+  durability/listing verification passes, tracked separately below.
 - Attempted to set up an hourly scheduled cloud-agent routine (via claude.ai routines)
   as a safety net in case the local session hit usage limits mid-build. Blocked: routines
   that attach a GitHub repo require the GitHub account to be connected at
@@ -86,7 +93,7 @@ spec detail, then continue with the first unchecked task below.
 
 ## Current status
 
-**Phases 1-3 complete and tested. Starting Phase 4 (frontend) next.**
+**Phases 1-5 complete and tested. Starting Phase 6 (Docker + README polish) next.**
 
 ## Task Checklist
 
@@ -131,23 +138,39 @@ spec detail, then continue with the first unchecked task below.
       real restart by dropping the pool/app and building a fresh one against the same
       (still-running) embedded Postgres instance
 
-### Phase 4 — Frontend
-- [ ] Vite + React + TS scaffold
-- [ ] wasm-pack output wired into frontend build
-- [ ] `useCrdtDoc.ts`
-- [ ] `useDocSocket.ts` (reconnect w/ backoff, offline queueing)
-- [ ] `Editor.tsx`
-- [ ] `PresenceCursors.tsx`
-- [ ] `ConnectionStatus.tsx`
-- [ ] Manual verification: two tabs sync within ~100ms
-- [ ] Manual verification: offline edit + reconnect merges cleanly
-- [ ] Manual verification: multi-cursor presence visible live
+### Phase 4 — Frontend — DONE
+- [x] Vite + React 19 + TS scaffold (`npm create vite@latest -- --template react-ts`,
+      copied config into `frontend/`, renamed to `cadence-frontend`)
+- [x] wasm-pack output wired into frontend build — built directly into
+      `frontend/src/wasm/` and **committed** (deliberate deviation from the usual
+      "don't commit generated code": see Decisions log)
+- [x] `useCrdtDoc.ts`
+- [x] `useDocSocket.ts` (reconnect w/ exponential backoff, offline queueing, AND reacts to
+      browser `online`/`offline` events, not just socket close/error — see Notes)
+- [x] `Editor.tsx` (`<textarea>`-based; prefix/suffix diffing turns DOM changes into
+      index-based CRDT ops; remote ops nudge the local caret via a `remoteRevision`
+      counter so typing elsewhere in the doc doesn't yank focus)
+- [x] `PresenceCursors.tsx` (mirror-div technique for approximate but real
+      wrap-aware cursor positioning over the textarea)
+- [x] `ConnectionStatus.tsx`
+- [x] `DocList.tsx` + `DocumentPage.tsx` + hand-rolled routing in `App.tsx` (Phase 5's
+      doc picker, built alongside since it was natural to do together)
+- [x] Verification: real headless-Chromium Playwright suite
+      (`frontend/e2e/collaboration.spec.ts`, `npm run test:e2e`) against the actual
+      running stack (real WASM, real relay-server, real Postgres) — two tabs syncing
+      live, presence cursors rendering, and the full offline-edit-then-reconnect-merge
+      scenario, all passing. Not just unit-tested — see Notes for a real bug this caught.
 
-### Phase 5 — Persistence & document management
-- [ ] `GET /docs` listing endpoint
-- [ ] Frontend document picker / landing page
-- [ ] Verify: restart + reopen doc restores full content
-- [ ] Verify: docs list shows all created documents
+### Phase 5 — Persistence & document management — DONE
+- [x] `GET /docs` listing endpoint (built in Phase 3 alongside POST /docs)
+- [x] Frontend document picker / landing page (`DocList.tsx`, built in Phase 4)
+- [x] Verify: restart + reopen doc restores full content — backend-level via
+      relay-server's `server_restart_does_not_lose_data` integration test; frontend-level
+      via e2e test "reopening a document reconstructs its content from the server"
+      (fresh page load = fresh WASM doc + fresh socket, zero client-side state carried
+      over, so it can only pass by correctly replaying persisted history)
+- [x] Verify: docs list shows all created documents — e2e test "the document picker
+      lists previously created documents"
 
 ### Phase 6 — Dockerization & polish
 - [ ] `docker-compose.yml` (postgres + relay-server; frontend build documented)
@@ -192,15 +215,53 @@ spec detail, then continue with the first unchecked task below.
      optimization pass, doesn't affect correctness. Revisit if a later environment has
      working GitHub release access and smaller .wasm output matters.
   3. No interactive browser available in this build environment to click through
-     `test-page/index.html` by hand. Verified equivalently instead: built a second,
-     throwaway `--target nodejs` variant of the same crate and ran a plain Node script
-     exercising insert/delete/applyRemote/toString, concurrent-edit convergence, and a
-     real `JSON.stringify`/`parse` round-trip (the actual wire format) — all passed. The
-     committed `test-page/index.html` itself is untouched by this and should still work
-     in a real browser (`wasm-pack build --target web --out-dir pkg` from `crdt-engine/`,
-     then serve the `crdt-engine/` directory over HTTP — `file://` won't work because the
-     WASM loader uses `fetch()`, which browsers block for local files).
+     `test-page/index.html` by hand at the time (Phase 2). Verified equivalently
+     instead: built a second, throwaway `--target nodejs` variant of the same crate and
+     ran a plain Node script exercising insert/delete/applyRemote/toString,
+     concurrent-edit convergence, and a real `JSON.stringify`/`parse` round-trip (the
+     actual wire format) — all passed. **Update from Phase 4**: a real (headless)
+     browser turned out to be available after all — see note below. This project no
+     longer needs the nodejs-target workaround for anything past Phase 2, but the
+     `test-page/index.html` HTML file itself is still there and still works.
   4. `crdt-engine/pkg/` (the wasm-pack build output) is gitignored, same as `/target/` —
-     it's a build artifact, regenerated with the command above. This matters for Phase 4
-     too: the frontend will need its own `wasm-pack build --target web --out-dir
-     ../frontend/src/wasm` step (documented in the README, not committed as binary output).
+     it's a build artifact, regenerated with the command above. `frontend/src/wasm/` is
+     the one exception: see Phase 4 notes below for why that one IS committed.
+
+- **Phase 4 environment/verification notes:**
+  1. A real browser turned out to be available: `npx playwright install chromium`
+     downloaded and installed headless Chromium successfully (network access to the
+     download host worked fine here, unlike the earlier `wasm-opt`/binaryen GitHub
+     release download — seems to have been specific to that one host/CDN path, not a
+     general block). This meant Phase 4 could be verified with a REAL browser running
+     the REAL app against a REAL relay-server + REAL Postgres, not just unit tests —
+     used `@playwright/test`, kept as a permanent, committed e2e suite
+     (`frontend/e2e/collaboration.spec.ts`, run via `npm run test:e2e`) since the build
+     plan explicitly lists Playwright as the intended e2e tool. Needs relay-server (+ its
+     DB) already running separately; Playwright's `webServer` config only manages the
+     Vite dev server. To run relay-server against a real Postgres without Docker/system
+     install during dev, the same `postgresql_embedded` trick from Phase 3 works — spin
+     up a tiny throwaway Rust binary that starts one and prints `DATABASE_URL`.
+  2. **Real bug caught by this e2e suite**: the offline/reconnect scenario revealed that
+     `Rga::integrate_insert` wasn't idempotent — replaying an already-known op (which
+     happens on every reconnect, since the relay server always sends the *full* op log
+     to every new connection, not just what a client missed) inserted a *second*,
+     duplicate node with the same id, visibly duplicating text after reconnect. Fixed by
+     making `integrate_insert` a no-op if the id already exists (see `rga.rs`); added a
+     regression test in `crdt-engine/tests/basic_ops.rs`
+     (`reapplying_an_already_known_remote_op_is_a_no_op`). This is a good example of why
+     the property-based convergence test alone wasn't enough to catch everything: it only
+     ever applies each generated op once per replica, so it structurally couldn't
+     exercise "redelivering the same op twice."
+  3. **Real (smaller) bug caught by the same testing**: relying only on the WebSocket's
+     own `close`/`error` events to detect "offline" wasn't reliable — Playwright's
+     `context.setOffline(true)` (a reasonable proxy for real network loss, e.g. WiFi
+     dropping) doesn't necessarily fire a prompt `close` event on an already-open socket.
+     Fixed by also listening for the browser's `window` `online`/`offline` events in
+     `useDocSocket.ts`, which fire reliably on real connectivity changes and are a more
+     realistic signal than waiting on TCP-level detection.
+  4. `frontend/src/wasm/` (the wasm-pack build output consumed by the frontend) is
+     committed, unlike `crdt-engine/pkg/`. Deliberate exception: this is a portfolio/demo
+     project where "clone and run" ease matters, and committing it means `npm install &&
+     npm run dev` just works with no Rust/wasm-pack toolchain required. Regenerate after
+     any crdt-engine change with `cd crdt-engine && wasm-pack build --target web
+     --out-dir ../frontend/src/wasm` (also documented in the README).

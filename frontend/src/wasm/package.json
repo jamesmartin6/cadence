@@ -1,0 +1,16 @@
+{
+  "name": "crdt-engine",
+  "type": "module",
+  "description": "From-scratch RGA sequence CRDT for collaborative text editing",
+  "version": "0.1.0",
+  "files": [
+    "crdt_engine_bg.wasm",
+    "crdt_engine.js",
+    "crdt_engine.d.ts"
+  ],
+  "main": "crdt_engine.js",
+  "types": "crdt_engine.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

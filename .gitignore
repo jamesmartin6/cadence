@@ -13,11 +13,14 @@ relay-server/pkg/
 node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/playwright-report/
+frontend/test-results/
 *.local
 
-# WASM generated output (rebuilt by wasm-pack, checked in separately if needed)
-frontend/src/wasm/*
-!frontend/src/wasm/.gitkeep
+# frontend/src/wasm IS committed on purpose: it's the wasm-pack build output, checked
+# in so `npm install && npm run dev` works with no Rust/wasm-pack toolchain required.
+# Regenerate after changing crdt-engine with:
+#   cd crdt-engine && wasm-pack build --target web --out-dir ../frontend/src/wasm
 
 # Env / secrets
 .env

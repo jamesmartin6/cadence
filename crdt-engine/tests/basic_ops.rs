@@ -1,5 +1,36 @@
 use crdt_engine::Doc;
 
+/// A client that reconnects to the relay server receives the *entire* op log again, not
+/// just what it missed (see progress.md / build plan) -- so re-delivering an op the
+/// local doc already has must be a safe no-op, not a duplicate character.
+#[test]
+fn reapplying_an_already_known_remote_op_is_a_no_op() {
+    let mut origin = Doc::new(1);
+    let ops: Vec<_> = "hi"
+        .chars()
+        .enumerate()
+        .map(|(i, ch)| origin.insert_local(i, ch))
+        .collect();
+
+    let mut replica = Doc::new(2);
+    for op in &ops {
+        replica.apply_remote(op.clone());
+    }
+    assert_eq!(replica.to_string(), "hi");
+
+    // Redeliver the exact same ops again (e.g. a fresh WebSocket connection replaying
+    // the full history after a reconnect).
+    for op in &ops {
+        replica.apply_remote(op.clone());
+    }
+    assert_eq!(
+        replica.to_string(),
+        "hi",
+        "redelivering known ops must not duplicate characters"
+    );
+    assert_eq!(replica.len(), 2);
+}
+
 #[test]
 fn sequential_local_inserts_produce_correct_string() {
     let mut doc = Doc::new(1);
