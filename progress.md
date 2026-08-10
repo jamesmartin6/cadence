@@ -66,11 +66,27 @@ spec detail, then continue with the first unchecked task below.
 - Using `postgresql_embedded` crate as a relay-server dev-dependency to make
   `cargo test` self-contained without Docker (see Environment notes). Does not change
   the production dependency — that's still `sqlx` against a real Postgres, exactly as
-  specced, wired via `DATABASE_URL`.
+  specced, wired via `DATABASE_URL`. Worked well: no OpenSSL/system deps needed on
+  Windows (uses schannel via native-tls), and the integration tests spin up a real,
+  disposable Postgres in ~5-40s depending on whether the binary cache is warm.
+- `relay-server` has BOTH `src/lib.rs` (routes, AppState, db/models/rooms/ws modules)
+  and a thin `src/main.rs` (env/startup only), instead of putting everything in
+  `main.rs` as the build plan's file listing implies. Reason: integration tests in
+  `tests/` can only import from a lib target, not a bin target, and real integration
+  tests (spinning up the actual Axum app + a real Postgres) are far more valuable than
+  skipping them to match the file listing exactly.
+- relay-server intentionally does NOT depend on the `crdt-engine` crate at all. Op
+  payloads are handled as opaque `serde_json::Value` end to end (stored in `ops.payload
+  jsonb`, relayed as-is). This is a direct consequence of the build plan's "dumb relay"
+  design (server never runs RGA logic) and it keeps the two crates fully decoupled.
+- sqlx used with runtime-checked `query`/`query_as` (bind parameters), not the
+  compile-time-checked `query!`/`query_as!` macros, specifically so `cargo build` never
+  needs a live database connection (or an offline `.sqlx` cache) just to compile —
+  matters a lot given no local Postgres is installed on this dev machine.
 
 ## Current status
 
-**Phases 1-2 complete and tested. Starting Phase 3 (relay server) next.**
+**Phases 1-3 complete and tested. Starting Phase 4 (frontend) next.**
 
 ## Task Checklist
 
@@ -97,17 +113,23 @@ spec detail, then continue with the first unchecked task below.
 - [x] Minimal HTML/JS test page (`crdt-engine/test-page/index.html`) loads WASM, inserts/deletes chars, to_string() updates
 - [x] Two "instances" converge via manually exchanged serialized ops — verified with an automated Node harness (see notes below) since no interactive browser is available in this build environment
 
-### Phase 3 — Relay server (Axum)
-- [ ] Cargo scaffold, Axum app, basic routing
-- [ ] `POST /docs` creates doc, returns id
-- [ ] `GET /ws/docs/{doc_id}` websocket upgrade + join room
-- [ ] `rooms.rs` in-memory registry (broadcast channel per room)
-- [ ] Postgres schema + migrations (docs, ops tables)
-- [ ] Op persistence on receipt, full-log replay to new joiners
-- [ ] Presence message type (not persisted)
-- [ ] Test: two scripted WS clients converge in real time
-- [ ] Test: late joiner receives full log and reconstructs doc
-- [ ] Test: server restart doesn't lose data (ops read back from Postgres)
+### Phase 3 — Relay server (Axum) — DONE
+- [x] Cargo scaffold, Axum app, basic routing (`src/lib.rs` + thin `src/main.rs`, see below)
+- [x] `POST /docs` creates doc, returns id (also `GET /docs` listing — trivial to add
+      alongside, real Phase 5 work is the frontend document picker consuming it)
+- [x] `GET /ws/docs/{doc_id}` websocket upgrade + join room
+- [x] `rooms.rs` in-memory registry (broadcast channel per room, with echo-suppression
+      and empty-room cleanup)
+- [x] Postgres schema + migrations (docs, ops tables) — `migrations/0001_init.sql`,
+      applied automatically at server startup via `sqlx::migrate!`
+- [x] Op persistence on receipt (atomic per-doc seq assignment via row lock), full-log
+      replay to new joiners
+- [x] Presence message type (Cursor, not persisted)
+- [x] Test: two scripted WS clients converge in real time
+- [x] Test: late joiner receives full log and reconstructs doc
+- [x] Test: server restart doesn't lose data (ops read back from Postgres) — simulated a
+      real restart by dropping the pool/app and building a fresh one against the same
+      (still-running) embedded Postgres instance
 
 ### Phase 4 — Frontend
 - [ ] Vite + React + TS scaffold
