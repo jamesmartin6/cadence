@@ -2,6 +2,12 @@
 /target/
 **/target/
 Cargo.lock.bak
+.cargo-build-tmp/
+
+# wasm-pack build output (regenerate with `wasm-pack build --target web --out-dir pkg`)
+crdt-engine/pkg/
+crdt-engine/pkg-node-verify/
+relay-server/pkg/
 
 # Node / frontend
 node_modules/

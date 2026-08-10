@@ -9,6 +9,14 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
 
 [dev-dependencies]
 proptest = "1"
+
+# wasm-opt (binaryen) is a post-build size/speed optimization pass, not required for
+# correctness. Disabled because this build environment can't reach GitHub releases to
+# download the binaryen toolchain wasm-pack wants to fetch automatically.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

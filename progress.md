@@ -70,7 +70,7 @@ spec detail, then continue with the first unchecked task below.
 
 ## Current status
 
-**Phase 1 complete and thoroughly tested. Starting Phase 2 (WASM bindings) next.**
+**Phases 1-2 complete and tested. Starting Phase 3 (relay server) next.**
 
 ## Task Checklist
 
@@ -90,12 +90,12 @@ spec detail, then continue with the first unchecked task below.
 - [x] Proptest convergence tests across 2-4 simulated sites, random orderings
 - [x] All tests green across many seeds (verified with `PROPTEST_CASES=5000 cargo test --release`, 0.39s)
 
-### Phase 2 — WASM bindings
-- [ ] `#[wasm_bindgen]` CrdtDoc wrapper in lib.rs (new/insert/delete/apply_remote/to_string)
-- [ ] serde + serde-wasm-bindgen for Operation JSON transport
-- [ ] `wasm-pack build --target web` succeeds
-- [ ] Minimal HTML/JS test page loads WASM, inserts chars, to_string() updates
-- [ ] Two test-page instances converge via manually copy-pasted serialized ops
+### Phase 2 — WASM bindings — DONE
+- [x] `#[wasm_bindgen]` CrdtDoc wrapper (`crdt-engine/src/wasm_api.rs`): new/insert/delete/applyRemote/toString/len/isEmpty/siteId
+- [x] serde + serde-wasm-bindgen for Operation JSON transport (verified round-trips through actual `JSON.stringify`/`parse`)
+- [x] `wasm-pack build --target web --out-dir pkg` succeeds (see Environment notes for the `wasm-opt`/binaryen caveat)
+- [x] Minimal HTML/JS test page (`crdt-engine/test-page/index.html`) loads WASM, inserts/deletes chars, to_string() updates
+- [x] Two "instances" converge via manually exchanged serialized ops — verified with an automated Node harness (see notes below) since no interactive browser is available in this build environment
 
 ### Phase 3 — Relay server (Axum)
 - [ ] Cargo scaffold, Axum app, basic routing
@@ -156,3 +156,29 @@ spec detail, then continue with the first unchecked task below.
   wasm-pack, never published to crates.io), so pinning exact dependency versions for
   reproducibility is more valuable than the usual "libraries shouldn't commit Cargo.lock"
   advice.
+- **Phase 2 environment quirks (both worth knowing for later phases too):**
+  1. `wasm-pack build` internally does `cargo install wasm-bindgen-cli` on first use to
+     get a matching-version CLI. On this machine, that `cargo install`'s build-script
+     execution got blocked by a Windows Application Control policy because it ran from
+     `%TEMP%`. Fix: set `CARGO_TARGET_DIR` to a project-local directory before running
+     `wasm-pack build` (redirects build-script execution away from the blocked temp
+     path). Needed once per machine/session, not a permanent config change.
+  2. `wasm-pack`'s default release profile tries to download `wasm-opt` (binaryen) from
+     GitHub releases to optimize the .wasm output; that download isn't reachable from
+     this environment. Disabled via `wasm-opt = false` under
+     `[package.metadata.wasm-pack.profile.release]` in `crdt-engine/Cargo.toml` — pure
+     optimization pass, doesn't affect correctness. Revisit if a later environment has
+     working GitHub release access and smaller .wasm output matters.
+  3. No interactive browser available in this build environment to click through
+     `test-page/index.html` by hand. Verified equivalently instead: built a second,
+     throwaway `--target nodejs` variant of the same crate and ran a plain Node script
+     exercising insert/delete/applyRemote/toString, concurrent-edit convergence, and a
+     real `JSON.stringify`/`parse` round-trip (the actual wire format) — all passed. The
+     committed `test-page/index.html` itself is untouched by this and should still work
+     in a real browser (`wasm-pack build --target web --out-dir pkg` from `crdt-engine/`,
+     then serve the `crdt-engine/` directory over HTTP — `file://` won't work because the
+     WASM loader uses `fetch()`, which browsers block for local files).
+  4. `crdt-engine/pkg/` (the wasm-pack build output) is gitignored, same as `/target/` —
+     it's a build artifact, regenerated with the command above. This matters for Phase 4
+     too: the frontend will need its own `wasm-pack build --target web --out-dir
+     ../frontend/src/wasm` step (documented in the README, not committed as binary output).

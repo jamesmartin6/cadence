@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Cadence — CRDT WASM test page</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+  .site { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+  .site h2 { margin-top: 0; font-size: 1rem; }
+  textarea { width: 100%; height: 3rem; font-size: 1.1rem; font-family: monospace; }
+  .ops { font-family: monospace; font-size: 0.8rem; background: #f5f5f5; padding: 0.5rem; height: 6rem; overflow-y: auto; white-space: pre-wrap; }
+  button { margin-top: 0.5rem; }
+  .row { display: flex; gap: 1rem; }
+  .row > div { flex: 1; }
+</style>
+</head>
+<body>
+<h1>Cadence — CRDT WASM smoke test</h1>
+<p>
+  Loads the compiled RGA CRDT engine directly as a WASM module (no React, no relay
+  server). Two independent <code>CrdtDoc</code> instances simulate two editing sites.
+  Type in either box, click "Send op(s) &rarr;" to copy that site's newest pending
+  operations into the other's inbox, then "Apply received" on the other side to
+  integrate them — exactly the manual copy/paste convergence check from the build plan.
+</p>
+<div class="row">
+  <div class="site">
+    <h2>Site A (site_id = 1)</h2>
+    <textarea id="text-a"></textarea>
+    <div>
+      <button id="send-a">Send op(s) to B &rarr;</button>
+      <button id="apply-a">&larr; Apply received</button>
+    </div>
+    <div class="ops" id="inbox-a"></div>
+  </div>
+  <div class="site">
+    <h2>Site B (site_id = 2)</h2>
+    <textarea id="text-b"></textarea>
+    <div>
+      <button id="send-b">&larr; Send op(s) to A</button>
+      <button id="apply-b">Apply received &rarr;</button>
+    </div>
+    <div class="ops" id="inbox-b"></div>
+  </div>
+</div>
+<p id="status">Loading WASM module…</p>
+
+<script type="module">
+  import init, { CrdtDoc } from "../pkg/crdt_engine.js";
+
+  await init();
+  document.getElementById("status").textContent = "WASM module loaded. Ready.";
+
+  const docA = new CrdtDoc(1);
+  const docB = new CrdtDoc(2);
+
+  const state = {
+    a: { doc: docA, textEl: document.getElementById("text-a"), inboxEl: document.getElementById("inbox-a"), pending: [], inbox: [] },
+    b: { doc: docB, textEl: document.getElementById("text-b"), inboxEl: document.getElementById("inbox-b"), pending: [], inbox: [] },
+  };
+
+  // Naive diff: given the textarea's new value vs the doc's current known text,
+  // compute a sequence of index-based insert/delete ops that reconciles them.
+  // This is *not* the real editor's cursor-tracking approach (that's Phase 4) —
+  // just enough here to drive insert()/delete() from typing in a plain textarea.
+  function reconcile(site) {
+    const target = site.textEl.value;
+    let current = site.doc.toString();
+
+    while (current !== target) {
+      if (current.length > target.length || (current.length === target.length && current !== target)) {
+        // find first mismatch, delete there
+        let i = 0;
+        while (i < current.length && i < target.length && current[i] === target[i]) i++;
+        const op = site.doc.delete(i);
+        site.pending.push(op);
+        current = site.doc.toString();
+      } else {
+        let i = 0;
+        while (i < current.length && i < target.length && current[i] === target[i]) i++;
+        const ch = target[i];
+        const op = site.doc.insert(i, ch);
+        site.pending.push(op);
+        current = site.doc.toString();
+      }
+    }
+  }
+
+  function wire(key, otherKey) {
+    const site = state[key];
+    const other = state[otherKey];
+
+    site.textEl.addEventListener("input", () => reconcile(site));
+
+    document.getElementById(`send-${key}`).addEventListener("click", () => {
+      other.inbox.push(...site.pending);
+      site.pending = [];
+      other.inboxEl.textContent = JSON.stringify(other.inbox, null, 1);
+    });
+
+    document.getElementById(`apply-${key}`).addEventListener("click", () => {
+      for (const op of site.inbox) {
+        site.doc.applyRemote(op);
+      }
+      site.inbox = [];
+      site.inboxEl.textContent = "";
+      site.textEl.value = site.doc.toString();
+    });
+  }
+
+  wire("a", "b");
+  wire("b", "a");
+</script>
+</body>
+</html>
