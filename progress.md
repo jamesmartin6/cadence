@@ -1,5 +1,15 @@
 # Cadence — Build Progress
 
+## STATUS: COMPLETE
+
+All 6 phases of the build plan are implemented, tested, and verified — including via a
+real GitHub Actions CI run covering unit tests, the property-based CRDT convergence
+test, backend integration tests against a real Postgres, a real-browser Playwright e2e
+suite (live sync, presence, offline/reconnect merge, doc persistence), and a full
+`docker compose build && up` smoke test. See the README for the project overview and
+demo walkthrough. Nothing further is required to consider this done; treat the checklist
+below as a historical record of how it was built, not a to-do list.
+
 This file is the single source of truth for build status. It is updated after every
 completed task. If you are picking this project back up (fresh session, fresh agent,
 after a reset, etc.), **read this file first**, then `cadence-build-plan.md` for full
@@ -185,9 +195,10 @@ spec detail, then continue with the first unchecked task below.
 - [x] GitHub Actions CI (`.github/workflows/ci.yml`): crdt-engine tests, relay-server
       tests, frontend typecheck/lint/build/e2e, AND a `docker compose build && up` smoke
       test — see Notes below for why this exists
-- [ ] Final pass: confirm the CI docker job actually passes once pushed (this machine has
-      no Docker at all, so the compose setup has only been reviewed by hand + validated
-      as syntactically correct YAML, never actually built/run, until CI runs it for real)
+- [x] Final pass: CI ran on push (run 31353586565) — **all 4 jobs passed**, including
+      `docker compose build && up` + the smoke test, on the first try. That's the real,
+      independent confirmation that the Docker setup this machine couldn't test locally
+      actually works end to end.
 
 ## Notes / gotchas discovered during build
 
